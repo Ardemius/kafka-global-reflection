@@ -1,0 +1,230 @@
+= Kafka global reflection
+Thomas SCHWENDER
+<https://sgithub.fr.world.socgen/tschwend041717[@thomas.schwender]>
+// Handling GitHub admonition blocks icons
+ifndef::env-github[:icons: font]
+ifdef::env-github[]
+:status:
+:outfilesuffix: .adoc
+:caution-caption: :fire:
+:important-caption: :exclamation:
+:note-caption: :paperclip:
+:tip-caption: :bulb:
+:warning-caption: : warning:
+endif::[]
+:imagesdir: ./images
+:source-highlighter: highlightjs
+// To turn off table and image title numbering
+:caption:
+// Next 2 ones are to handle line breaks in some elements (list, footnotes, etc.)
+:lb: pass:[<br> +]
+:sb: pass:[<br>]
+// check https://github.com/Ardemius/personal-wiki/wiki/AsciiDoctor-tips for tips on table of content in GitHub
+:toc: macro
+:toclevels: 5
+// to avoid numbering in tables and images
+:caption:
+toc::[]
+
+== Overview
+
+Kafka is:
+
+* an asynchronous messaging technology
+* scalable, fault-tolerant, publish-subscribe messaging system
+* used by major web-scale Internet companies (LinkedIn, Twitter, AirBnB)
+* part of the Apache Hadoop ecosystem
+* developed in Scala
+
+Kafka is designed with *performance* and *persistence* in mind, for *data integration* and *real-time, stream and event, processing*. +
+As a consequence, it fits very well to *event-driven architecture*.
+
+It is a pure pub/sub, taking bytes as an input and redistributes them without ever parsing them.
+
+Defining Kafka in one short sentence could be:
+
+[quote, Map Academy Essentials]
+____
+*Publish-subscribe* messaging system rethought as a distributed commit log.
+____
+
+== History
+
+Kafka was developed around 2010, at LinkedIn, by (principally) *Jay Kreps* (creator of Big Data Kappa architecture), Jun Rao, and Neha Narkhede. +
+The reason of its creation was to *enable low-latency ingestion of large amounts of event data*, from the LinkedIn website and infrastructure, *into a lambda architecture* that harnessed Hadoop and *real-time event processing systems*
+
+At that time, there weren't any solutions for this type of ingress for real-time applications.
+
+NOTE: Currently, LinkedIn has reported ingestion rates of 1 trillion messages a day.
+
+== Working
+
+Kafka main characteristics:
+
+* *Publish-subscribe* system that can deliver in-order, *persistent* (log data
+structure), scalable messaging
++
+.Reminder: *publish/subscribe* messaging vs *queuing* messaging
+[NOTE]
+====
+* *Publish/subscribe messaging* is a messaging scheme in which multiple consumers can consume the same message, at different rates.
+* By opposition to *queuing messaging* (point-to-point), in which only one consumer listening to a queue will have the opportunity to receive a specific message sent to this queue.
+====
+
+* It has publishers (producers), *topics*, and subscribers (consumers)
+* Can *partition* topics so as to enable *massively parallel consumption*
+* All messages written to Kafka are *persisted* and replicated to peer brokers for *fault tolerance*. +
+*The duration of storage is configurable*: 7 days by default, but you *can also keep messages forever* (through the *retention policy* or *log compaction*)
+
+The most important technical concepts of Kafka are: *log*, *topic*, *partition*, *producer*, *consumer* and *broker*.
+
+=== Architecture
+
+.Global Apache Kafka architecture (with 1 topic, 1 partition, replication factor 4)
+image::kafka-reflection_global-architecture.png[]
+[NOTE]
+====
+*Kafka depends on an external Apache Zookeeper infrastructure*, that acts as a *scheduler* and provides a *shared database*, (key/value store) that all the entities involved in the exchanges use to get and modify the state of the system (generally meaning *service discovery* and small *config/metadata management*)
+* Producers will pull from the Zookeeper instance the address of the primary broker for a topic
+* Consumer groups will store the offset of the last message they read in the tree
+* etc.
+====
+
+=== Log data structure
+
+The most important concept behind Kafka is its *log data structure*, in which messages are stored.
+
+It's simply an *append-only*, *time-ordered* sequence of records, where the data can be anything (array of bytes in Kafka case).
+
+image::kafka-reflection_log-data-structure.png[]
+
+=== Topic and partition
+
+All Kafka messages are stored and organized in *topics*. +
+You send a message to a specific topic, and you read a message from a specific topic.
+
+A *consumer* pulls messages off of a Kafka topic, while *producers* push messages into a Kafka topic.
+
+As Kafka is a distributed system, it runs in a *cluster*, each *node* of which being called a Kafka *broker*.
+
+Kafka topics are divided into a number of *partitions*:
+
+* *Partitions* allow you to parallelize a topic by splitting the data in a particular topic across multiple brokers. As a broker is a cluster node, it enables each partition to be placed in a separate machine, so as to allow for *multiple consumers to read from a topic in parallel*.
++
+image::kafka-reflection_partitions.png[]
+
+* Each message within a partition has in ID called *offset*. This last is responsible for the *immutable* ordering of messages in the partition.
+* *Consumers* read messages *starting from a specific offset*. +
+-> And *NOT* "at" a specific offset. Consumers can't read a specific message at a given place (offset)
+
+* As a consequence of the previous characteristic, a Kafka message is identified by its topic / partition / offset.
++
+image::kafka-reflection_message-offset.png[]
+
+=== Kafka guarantees, differences and advantages when compared with other MOMS
+
+*Kafka guarantees :*
+
+* Messages sent by a producer to a particular topic partition will be appended in the order they are sent. +
+That is, if M1 and M2 are records sent by the same producer, and M1 is sent first, then M1 will have a lower offset than M2, and appear earlier in the log.
+
+* A consumer instance sees records in the order they are stored in the log.
+
+* For a topic with replication factor N, we will tolerate up to N-1 server failures without losing any records committed to the log.
+
+*What Kafka doesn't do that other "classical" MOM do:*
+
+* Kafka also *does not track the consumers that a topic has*, or *who has consumed what messages*. +
+All of that is left up to the consumers.
+* Kafka *doesn't provide individual message IDs*. Messages are simply addressed by their offset in the log.
+
+Those differences allow the following optimizations:
+
+* *No deletes*. Kafka keeps all parts of the log *for the specified time* (defined by the retention policy).
+* It lightens the load by not maintaining any indexes that record what messages it has. +
+There is *no random access*: consumers just specify offsets and Kafka delivers the messages in order, starting with the offset.
+
+* It *can efficiently stream the messages to consumers* using kernel-level 10 and not buffering the messages in user space.
+* It can leverage the operating system for file page caches and *efficient writeback/writethrough to disk*.
+
+-> Those 3 last points enable Kafka to be *extremely fast* in its read/write process, which is the main reason of its success (especially true in the Big Data use cases, where *throughput* is vital.)
+
+== Multi-tenant or multi-instance?
+
+== Use cases
+
+=== Good use cases
+
+==== Messaging
+
+In comparison to most messaging systems (ActiveMQ or RabbitMQ) *Kafka has better throughput*, built-in partitioning, replication, and fault-tolerance which makes it a good solution for *large scale message processing applications*.
+
+==== Website Activity Tracking
+
+==== Metrics
+
+==== Log Aggregation
+
+==== Stream Processing
+
+==== Direct querying (with no storage in classic data-stores)
+
+"parking to data-store" step can sometimes be omitted with analytical tools querying directly Kafka for real-time analytics. +
+See https://www.rittmanmead.com/blog/2017/07/analyzing-wimbledon-twitter-feeds-in-real-time-with-kafka-presto-and-oracle-dvd-v3/
+
+=== Use cases when not to use Kafka
+
+When you need the following features, Kafka is *not* a good choice:
+
+* You need to set a TTL (time to live) value for message or queue. +
+-> feature not available on Kafka
+* You need *non-persistent messaging*. +
+-> contrary to Kafka spirit (a log that stores messages)
+* You need *request-response messaging* . +
+-> Kafka doesn't have any acknowledgment feature for the process of a message
+* You need to target specific messages (correlation ID selectors) +
+-> Message have no ID in Kafka
+
+=== Examples of use from other companies
+
+* *Netflix ingestion framework*: ~500 billion events per day (~1.3 PB data) and at peak up to ~8 million events per second.
+
+=== Examples of technical stack using Kafka
+
+* *Twitter / Kafka / Kafka Connect / Presto* +
+Presto is a distributed SQL query engine, belonging to the same family of *Impala* and *Drill*. +
+Compared to those last 2, it has here an advantage: it queries *natively* Kafka through a https://prestodb.io/docs/current/connector/kafka-tutorial.html[dedicated connector). +
+It is used by Facebook for interactive queries against their 300PB data warehouse (between other use cases).
+    ** https://prestodb.io
+    ** https://www.rittmanmead.com/blog/2017/07/analyzing-wimbledon-twitter-feeds-in-rea l-time-with-kafka-presto-and-oracle-dvd-v3/
+
+*Twitter / Kafka / Kafka Connect / Big Query / Tableau* +
+concrete use case on Game of Thrones s07: https://www.rittmanmead.com/blog/2017/08/how-was-game-of-thrones-587-95-tweet-analysis-with-kafka-bigquery-and-tableau/
+
+== Kafka ecosystem
+
+=== Kafka Connect
+
+Kafka Connect has also the benefit of being able to transform the data before landing it in Kafka making the data parsing easier and the storage faster to retrieve.
+
+Resources:
+
+* Kafka Connect doc from Confluent: https://www.confluent.io/product/connectors/ 
+* https://speakerdeck.com/rmoff/real-time-data-integration-at-scale-with-kafka-connect-dublin-apache-kafka-meetup-04-jul-2017
+
+=== Kafka Streams
+
+== Kafka in the cloud
+
+* https://www.confluent.io/confluent-cloud/
+
+== Resources
+
+* https://techbeacon.com/what-apache-kafka-why-it-so-popular-should-you-use-it
+* https://engineering.linkedin.com/distributed-systems/log-what-every-software-engineer-should-know-about-real-time-datas-unifying
+* https://kafka.apache.org/documentation/#introduction
+* https://sookocheff.com/post/kafka/kafka-in-a-nutshell/
+* https://www.rabbitmq.com/tt1.html
+* https://content.pivotal.io/blog/understanding-when-to-use-rabbitmq-or-apache-kafka
+* http://kth.diva-portal.org/smash/get/diva2:813137/FULLTEXT01.pdf: excellent degree project with theme "Message-oriented Middleware for Scalable Data Analytics Architectures". Especially have a look at section 4 _Choice of a message broker_
+
